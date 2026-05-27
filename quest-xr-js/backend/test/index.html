@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quest XR — Gateway Test Client</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0e17;
+      --surface: #111827;
+      --surface-2: #1a2236;
+      --border: #1e293b;
+      --text: #e2e8f0;
+      --text-dim: #64748b;
+      --accent: #6366f1;
+      --accent-glow: rgba(99,102,241,.25);
+      --green: #22c55e;
+      --green-glow: rgba(34,197,94,.2);
+      --red: #ef4444;
+      --red-glow: rgba(239,68,68,.2);
+      --amber: #f59e0b;
+      --cyan: #06b6d4;
+      --pink: #ec4899;
+      --mono: 'JetBrains Mono', monospace;
+      --sans: 'Inter', system-ui, sans-serif;
+    }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header h1 span { font-size: 20px; }
+    .status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 8px var(--red-glow);
+      transition: all .3s;
+    }
+    .status-dot.connected {
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green-glow);
+    }
+    .status-label {
+      font-size: 12px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+    }
+
+    /* ── Layout ── */
+    .main {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      grid-template-rows: 1fr;
+      height: calc(100vh - 57px);
+    }
+
+    /* ── Left Panel (Input) ── */
+    .input-panel {
+      padding: 20px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+      background: var(--surface);
+    }
+    .input-panel h2 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+
+    .ws-url-group {
+      display: flex;
+      gap: 8px;
+    }
+    .ws-url-group input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      font-family: var(--mono);
+      font-size: 13px;
+      border-radius: 6px;
+      outline: none;
+      transition: border .2s;
+    }
+    .ws-url-group input:focus { border-color: var(--accent); }
+
+    button {
+      cursor: pointer;
+      font-family: var(--sans);
+      font-weight: 600;
+      font-size: 13px;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      transition: all .2s;
+    }
+    .btn-connect {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+    .btn-connect:hover { filter: brightness(1.15); }
+    .btn-connect.active {
+      background: var(--red);
+      box-shadow: 0 0 12px var(--red-glow);
+    }
+
+    /* Text input */
+    .text-input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .text-input-group textarea {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 12px;
+      font-family: var(--sans);
+      font-size: 14px;
+      border-radius: 8px;
+      resize: vertical;
+      min-height: 80px;
+      outline: none;
+      transition: border .2s;
+    }
+    .text-input-group textarea:focus { border-color: var(--accent); }
+
+    .btn-send {
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      color: #fff;
+      padding: 10px;
+      font-size: 14px;
+      border-radius: 8px;
+      box-shadow: 0 2px 12px var(--accent-glow);
+    }
+    .btn-send:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-send:active { transform: translateY(0); }
+    .btn-send:disabled {
+      opacity: .4;
+      pointer-events: none;
+    }
+
+    /* Image upload */
+    .image-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all .25s;
+      position: relative;
+      overflow: hidden;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--cyan);
+      background: rgba(6,182,212,.05);
+      color: var(--cyan);
+    }
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .drop-zone .icon { font-size: 28px; margin-bottom: 6px; }
+    .image-preview {
+      max-height: 120px;
+      border-radius: 6px;
+      object-fit: contain;
+      display: none;
+    }
+    .btn-clear-image {
+      background: var(--surface-2);
+      color: var(--text-dim);
+      font-size: 12px;
+      padding: 5px 10px;
+      display: none;
+    }
+
+    /* Quick presets */
+    .presets {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .presets h2 { margin-bottom: 2px; }
+    .preset-btn {
+      background: var(--surface-2);
+      color: var(--text);
+      text-align: left;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: var(--mono);
+      border: 1px solid transparent;
+    }
+    .preset-btn:hover {
+      border-color: var(--accent);
+      background: rgba(99,102,241,.08);
+    }
+    .preset-btn .tag {
+      display: inline-block;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+      margin-right: 6px;
+      text-transform: uppercase;
+    }
+    .tag-obj { background: var(--pink); color: #fff; }
+    .tag-inv { background: var(--amber); color: #000; }
+    .tag-vis { background: var(--cyan); color: #000; }
+    .tag-gen { background: var(--green); color: #000; }
+
+    /* ── Right Panel (Logs) ── */
+    .output-panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+    }
+    .log-pane {
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+    }
+    .log-pane-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .log-pane-header h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pane-badge {
+      font-size: 10px;
+      background: var(--surface-2);
+      color: var(--text-dim);
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-family: var(--mono);
+    }
+    .btn-clear-pane {
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 11px;
+      padding: 3px 8px;
+    }
+    .btn-clear-pane:hover { color: var(--text); }
+    .log-pane-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+    .log-entry {
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,.03);
+      word-break: break-word;
+    }
+    .log-entry .timestamp {
+      color: var(--text-dim);
+      margin-right: 6px;
+      font-size: 10px;
+    }
+    .log-entry.action-ui_log { color: var(--amber); }
+    .log-entry.action-voice_text { color: var(--green); }
+    .log-entry.action-voice_audio { color: var(--cyan); }
+    .log-entry.action-vision_result { color: var(--pink); }
+    .log-entry.action-ui_tree { color: #a78bfa; }
+    .log-entry.action-object_request { color: var(--pink); }
+    .log-entry.action-error { color: var(--red); }
+    .log-entry.action-sent { color: var(--accent); }
+
+    /* JSON tree viewer */
+    .json-tree {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin: 4px 0;
+      white-space: pre-wrap;
+      font-size: 11px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+      .input-panel { border-right: none; border-bottom: 1px solid var(--border); max-height: 40vh; }
+      .output-panel { grid-template-columns: 1fr; grid-template-rows: repeat(4, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <h1><span>🥽</span> Quest XR — Gateway Test Client</h1>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="status-dot" id="statusDot"></div>
+      <span class="status-label" id="statusLabel">Disconnected</span>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- Left: Input Panel -->
+    <aside class="input-panel">
+
+      <h2>WebSocket Connection</h2>
+      <div class="ws-url-group">
+        <input type="text" id="wsUrl" value="ws://localhost:8787" placeholder="ws://localhost:8787">
+        <button class="btn-connect" id="btnConnect" onclick="toggleConnection()">Connect</button>
+      </div>
+
+      <h2>Send Message</h2>
+      <div class="text-input-group">
+        <textarea id="txtMessage" placeholder='Escribe un comando como si fuera la transcripción de voz del Quest...\n\nEj: "Pon una mesa de madera"' rows="3"></textarea>
+        <button class="btn-send" id="btnSend" disabled onclick="sendMessage()">Enviar al Backend ⚡</button>
+      </div>
+
+      <h2>Image Payload (VISION)</h2>
+      <div class="image-group">
+        <div class="drop-zone" id="dropZone">
+          <div class="icon">📷</div>
+          <div>Arrastra una imagen o haz clic para cargar</div>
+          <div style="font-size:11px;margin-top:4px;color:var(--text-dim)">Se enviará como Base64 con el texto</div>
+          <input type="file" id="fileInput" accept="image/*">
+        </div>
+        <img class="image-preview" id="imgPreview" alt="Preview">
+        <button class="btn-clear-image" id="btnClearImage" onclick="clearImage()">✕ Quitar imagen</button>
+      </div>
+
+      <div class="presets">
+        <h2>Quick Presets</h2>
+        <button class="preset-btn" onclick="usePreset('Pon un carro deportivo azul en la escena')">
+          <span class="tag tag-obj">OBJ</span> Pon un carro deportivo azul en la escena
+        </button>
+        <button class="preset-btn" onclick="usePreset('Hazme un resumen completo sobre la historia de la computación cuántica')">
+          <span class="tag tag-inv">INV</span> Resumen sobre computación cuántica
+        </button>
+        <button class="preset-btn" onclick="usePreset('¿Qué planta es esta que tengo en la mano?')">
+          <span class="tag tag-vis">VIS</span> ¿Qué planta tengo en la mano?
+        </button>
+        <button class="preset-btn" onclick="usePreset('¿Por qué el cielo es azul?')">
+          <span class="tag tag-gen">GEN</span> ¿Por qué el cielo es azul?
+        </button>
+        <button class="preset-btn" onclick="usePreset('Hola, ¿cómo estás?')">
+          <span class="tag tag-gen">GEN</span> Hola, ¿cómo estás?
+        </button>
+        <button class="preset-btn" onclick="usePreset('Quiero ver una espada medieval')">
+          <span class="tag tag-obj">OBJ</span> Quiero ver una espada medieval
+        </button>
+      </div>
+    </aside>
+
+    <!-- Right: Output Panels -->
+    <div class="output-panel">
+
+      <!-- Pane 1: UI_LOG & System -->
+      <div class="log-pane">
+        <div class="log-pane-header">
+          <h3>📋 System / UI_LOG <span class="pane-badge" id="badgeSystem">0</span></h3>
+          <button class="btn-clear-pane" onclick="clearPane('system')">Clear</button>
+        </div>
+        <div class="log-pane-body" id="paneSystem"></div>
+      </div>
+
+      <!-- Pane 2: VOICE_TEXT & VOICE_AUDIO -->
+      <div class="log-pane">
+        <div class="log-pane-header">
+          <h3>🔊 Voice (Text & Audio) <span class="pane-badge" id="badgeVoice">0</span></h3>
+          <button class="btn-clear-pane" onclick="clearPane('voice')">Clear</button>
+        </div>
+        <div class="log-pane-body" id="paneVoice"></div>
+      </div>
+
+      <!-- Pane 3: VISION_RESULT -->
+      <div class="log-pane">
+        <div class="log-pane-header">
+          <h3>👁️ Vision Results <span class="pane-badge" id="badgeVision">0</span></h3>
+          <button class="btn-clear-pane" onclick="clearPane('vision')">Clear</button>
+        </div>
+        <div class="log-pane-body" id="paneVision"></div>
+      </div>
+
+      <!-- Pane 4: UI_TREE & OBJECT_REQUEST -->
+      <div class="log-pane">
+        <div class="log-pane-header">
+          <h3>📦 Objects & Research <span class="pane-badge" id="badgeData">0</span></h3>
+          <button class="btn-clear-pane" onclick="clearPane('data')">Clear</button>
+        </div>
+        <div class="log-pane-body" id="paneData"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // ── State ──
+    let ws = null;
+    let audioContext = null;
+    let nextAudioTime = 0;
+    let imageBase64 = null;
+    let imageMimeType = null;
+    const paneCounts = { system: 0, voice: 0, vision: 0, data: 0 };
+
+    function initAudio() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        nextAudioTime = audioContext.currentTime;
+      }
+    }
+
+    // ── DOM Refs ──
+    const $ = (id) => document.getElementById(id);
+    const statusDot   = $('statusDot');
+    const statusLabel  = $('statusLabel');
+    const btnConnect   = $('btnConnect');
+    const btnSend      = $('btnSend');
+    const txtMessage   = $('txtMessage');
+    const fileInput    = $('fileInput');
+    const dropZone     = $('dropZone');
+    const imgPreview   = $('imgPreview');
+    const btnClearImage = $('btnClearImage');
+
+    // ── Connection ──
+    function toggleConnection() {
+      if (ws && ws.readyState <= WebSocket.OPEN) {
+        ws.close();
+        return;
+      }
+      const url = $('wsUrl').value.trim();
+      if (!url) return;
+
+      appendLog('system', 'sent', `Connecting to ${url}...`);
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        initAudio();
+        statusDot.classList.add('connected');
+        statusLabel.textContent = 'Connected';
+        btnConnect.textContent = 'Disconnect';
+        btnConnect.classList.add('active');
+        btnSend.disabled = false;
+        appendLog('system', 'action-ui_log', '✅ WebSocket connected');
+      };
+
+      ws.onclose = () => {
+        statusDot.classList.remove('connected');
+        statusLabel.textContent = 'Disconnected';
+        btnConnect.textContent = 'Connect';
+        btnConnect.classList.remove('active');
+        btnSend.disabled = true;
+        appendLog('system', 'action-ui_log', '🔌 WebSocket disconnected');
+      };
+
+      ws.onerror = (err) => {
+        appendLog('system', 'action-error', `❌ WebSocket error: ${err.type || 'unknown'}`);
+      };
+
+      ws.onmessage = (event) => {
+        handleServerMessage(event.data);
+      };
+    }
+
+    // ── Send Message ──
+    function sendMessage() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const text = txtMessage.value.trim();
+      if (!text && !imageBase64) return;
+
+      const payload = { text };
+      if (imageBase64) {
+        payload.image = imageBase64;
+        payload.imageMimeType = imageMimeType || 'image/jpeg';
+      }
+
+      const jsonStr = JSON.stringify(payload);
+      ws.send(jsonStr);
+      appendLog('system', 'action-sent', `📤 Sent: "${text}"${imageBase64 ? ' [+image]' : ''}`);
+      txtMessage.value = '';
+    }
+
+    // ── Handle Server Messages ──
+    function handleServerMessage(raw) {
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch (e) {
+        appendLog('system', 'action-error', `Raw: ${raw}`);
+        return;
+      }
+
+      const action = data.action || 'UNKNOWN';
+
+      switch (action) {
+        case 'UI_LOG':
+          appendLog('system', 'action-ui_log', `${data.message || ''}`);
+          break;
+
+        case 'VOICE_TEXT':
+          appendLog('voice', 'action-voice_text', `💬 ${data.text || ''}`);
+          break;
+
+        case 'VOICE_AUDIO':
+          appendLog('voice', 'action-voice_audio', `🔊 Audio chunk received (${data.mimeType || 'unknown'}, ${(data.data || '').length} chars base64)`);
+          playAudio(data);
+          break;
+
+        case 'VISION_RESULT':
+          appendLog('vision', 'action-vision_result', `Summary: ${data.summary || 'N/A'}`);
+          if (data.labels && data.labels.length > 0) {
+            const labelsStr = JSON.stringify(data.labels, null, 2);
+            appendJsonBlock('vision', 'Labels', labelsStr);
+          }
+          if (data.warnings && data.warnings.length > 0) {
+            appendLog('vision', 'action-error', `⚠️ Warnings: ${data.warnings.join(', ')}`);
+          }
+          break;
+
+        case 'UI_TREE':
+          appendLog('data', 'action-ui_tree', `📊 Research tree received: "${data.tree?.title || 'Untitled'}"`);
+          if (data.tree) {
+            appendJsonBlock('data', 'UI_TREE', JSON.stringify(data.tree, null, 2));
+          }
+          break;
+
+        case 'OBJECT_REQUEST':
+          appendLog('data', 'action-object_request', `🎯 Object request: "${data.query || 'N/A'}"`);
+          break;
+
+        default:
+          appendLog('system', 'action-ui_log', `Unknown action: ${action}`);
+          appendJsonBlock('system', action, JSON.stringify(data, null, 2));
+      }
+    }
+
+    // ── Logging Helpers ──
+    async function playAudio(payload) {
+      if (!payload?.data || !audioContext) return;
+      try {
+        const binaryString = atob(payload.data);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        const sampleRate = payload.sampleRate || 24000;
+        const int16Array = new Int16Array(bytes.buffer);
+        const audioBuffer = audioContext.createBuffer(1, int16Array.length, sampleRate);
+        const channelData = audioBuffer.getChannelData(0);
+        
+        for (let i = 0; i < int16Array.length; i++) {
+          channelData[i] = int16Array[i] / 32768.0;
+        }
+
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+
+        // Encolamiento de audio para que no se pisen
+        if (nextAudioTime < audioContext.currentTime) {
+           nextAudioTime = audioContext.currentTime;
+        }
+        
+        source.start(nextAudioTime);
+        nextAudioTime += audioBuffer.duration;
+      } catch (err) {
+        console.error("Audio playback error:", err);
+      }
+    }
+
+    function appendLog(pane, cssClass, message) {
+      const container = $(`pane${capitalize(pane)}`);
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${cssClass}`;
+
+      const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      entry.innerHTML = `<span class="timestamp">[${ts}]</span> ${escapeHtml(message)}`;
+
+      container.appendChild(entry);
+      container.scrollTop = container.scrollHeight;
+
+      paneCounts[pane]++;
+      $(`badge${capitalize(pane)}`).textContent = paneCounts[pane];
+    }
+
+    function appendJsonBlock(pane, label, json) {
+      const container = $(`pane${capitalize(pane)}`);
+      const wrapper = document.createElement('div');
+      wrapper.className = 'log-entry';
+      wrapper.innerHTML = `<div class="json-tree"><strong>${escapeHtml(label)}:</strong>\n${escapeHtml(json)}</div>`;
+      container.appendChild(wrapper);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function clearPane(pane) {
+      $(`pane${capitalize(pane)}`).innerHTML = '';
+      paneCounts[pane] = 0;
+      $(`badge${capitalize(pane)}`).textContent = '0';
+    }
+
+    function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+    function escapeHtml(s) {
+      const el = document.createElement('span');
+      el.textContent = s;
+      return el.innerHTML;
+    }
+
+    // ── Image Upload ──
+    fileInput.addEventListener('change', handleFileSelect);
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) processFile(e.dataTransfer.files[0]);
+    });
+
+    function handleFileSelect(e) {
+      if (e.target.files.length > 0) processFile(e.target.files[0]);
+    }
+
+    function processFile(file) {
+      if (!file.type.startsWith('image/')) {
+        appendLog('system', 'action-error', '❌ Only image files are supported');
+        return;
+      }
+      imageMimeType = file.type;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        imageBase64 = dataUrl.split(',')[1]; // strip data URI prefix
+        imgPreview.src = dataUrl;
+        imgPreview.style.display = 'block';
+        btnClearImage.style.display = 'inline-block';
+        dropZone.style.display = 'none';
+        appendLog('system', 'action-ui_log', `📷 Image loaded: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearImage() {
+      imageBase64 = null;
+      imageMimeType = null;
+      imgPreview.src = '';
+      imgPreview.style.display = 'none';
+      btnClearImage.style.display = 'none';
+      dropZone.style.display = 'block';
+      fileInput.value = '';
+    }
+
+    // ── Quick Presets ──
+    function usePreset(text) {
+      txtMessage.value = text;
+      txtMessage.focus();
+    }
+
+    // ── Keyboard shortcut ──
+    txtMessage.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+  </script>
+</body>
+</html>

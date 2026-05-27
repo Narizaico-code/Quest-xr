@@ -1,0 +1,10 @@
+import * as __wonderlandengine_components from '@wonderlandengine/components';
+_registerEditor(__wonderlandengine_components);
+import * as __wonderlandengine_spatial_audio from '@wonderlandengine/spatial-audio';
+_registerEditor(__wonderlandengine_spatial_audio);
+import * as _C__Users_Angel_Geovanny_Documents_WonderlandEngine_quest_xr_js_button_js from 'C:/Users/Angel Geovanny/Documents/WonderlandEngine/quest-xr/js/button.js';
+_registerEditor(_C__Users_Angel_Geovanny_Documents_WonderlandEngine_quest_xr_js_button_js);
+import * as _C__Users_Angel_Geovanny_Documents_WonderlandEngine_quest_xr_js_gateway_client_js from 'C:/Users/Angel Geovanny/Documents/WonderlandEngine/quest-xr/js/gateway-client.js';
+_registerEditor(_C__Users_Angel_Geovanny_Documents_WonderlandEngine_quest_xr_js_gateway_client_js);
+import * as _C__Users_Angel_Geovanny_Documents_WonderlandEngine_quest_xr_js_mesh_spawner_js from 'C:/Users/Angel Geovanny/Documents/WonderlandEngine/quest-xr/js/mesh-spawner.js';
+_registerEditor(_C__Users_Angel_Geovanny_Documents_WonderlandEngine_quest_xr_js_mesh_spawner_js);
