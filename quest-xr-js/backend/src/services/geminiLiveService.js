@@ -4,18 +4,21 @@ import {
 } from "../configs/gemini.config.js";
 import { logError, logWarn } from "../shared/logger.js";
 
-const DEFAULT_SYSTEM_PROMPT = `Eres el asistente principal de un entorno inmersivo de Realidad Virtual (WebXR) construido sobre Wonderland Engine.
-Tu nombre es "Asistente" o como el usuario quiera llamarte. Tu objetivo es acompañar al usuario de manera amigable, natural y útil. 
-En tu entorno, hay sistemas delegados: si el usuario pide ver un modelo 3D o investiga algo denso, otro sistema se encarga de la interfaz gráfica, pero tú sigues siendo la voz y la presencia que guía.
-- Responde de forma muy natural, con un tono humano, ameno y servicial.
-- Háblame siempre en español nativo a menos que te pidan otro idioma.
-- Si el usuario te cuenta sobre lo que ve en las gafas, acompáñalo con curiosidad y empatía.
-- Conoces el proyecto actual: es un asistente multimodal que conecta unas Meta Quest 3S a través de Node.js, usando LLMs locales (Qwen) y la nube de Gemini.
+const DEFAULT_SYSTEM_PROMPT = `Eres "Asistente", la voz principal de un sistema VR (WebXR) sobre Wonderland Engine.
+Contexto del proyecto:
+- Cliente: Meta Quest 3S + navegador Oculus.
+- Backend: Node.js con WebSocket.
+- Enrutamiento local: Qwen clasifica en OBJETO/INVESTIGAR/VISION/CONVERSACION_GENERAL.
+- OBJETO: pipeline 3D (Sketchfab/Meshy).
+- INVESTIGAR: Gemini Pro/Flash-Thinking (REST).
+- VISION: captura de frame + Gemini Vision (REST).
+- Conversación general: Gemini Live (tú).
 
-IMPORTANTE: El usuario te habla por voz (transcrita a texto). Mantén tus repuestas amigables pero relativamente concisas para no aburrirlo en VR.
-`;
+Tu rol: conversar, acompañar y coordinar; usa herramientas cuando apliquen.
+Habla siempre en español natural (salvo que el usuario pida otro idioma).
+Respuestas humanas, amables y concisas para VR.`;
 
-export function createGeminiLiveSession({ onText, onAudio, onEvent }) {
+export function createGeminiLiveSession({ onText, onAudio, onEvent, onToolCall }) {
   const apiKey = process.env.GEMINI_API_KEY || "";
   const model = process.env.GEMINI_LIVE_MODEL || DEFAULT_GEMINI_LIVE_MODEL;
   const systemPrompt = process.env.GEMINI_LIVE_SYSTEM_PROMPT || DEFAULT_SYSTEM_PROMPT;
@@ -44,13 +47,30 @@ export function createGeminiLiveSession({ onText, onAudio, onEvent }) {
             parameters: {
               type: "OBJECT",
               properties: {
-                object_name: { type: "STRING", description: "Nombre del objeto en inglés" }
-              }
-            }
-          }
-        ]
-      }
-    ]
+                object_name: {
+                  type: "STRING",
+                  description: "Nombre del objeto en inglés",
+                },
+              },
+              required: ["object_name"],
+            },
+          },
+          {
+            name: "request_vision_snapshot",
+            description: "Solicita un snapshot del entorno para responder preguntas visuales del usuario.",
+            parameters: {
+              type: "OBJECT",
+              properties: {
+                question: {
+                  type: "STRING",
+                  description: "Pregunta o contexto visual a responder.",
+                },
+              },
+            },
+          },
+        ],
+      },
+    ],
   };
 
   const connect = async () => {
@@ -69,33 +89,29 @@ export function createGeminiLiveSession({ onText, onAudio, onEvent }) {
             if (onEvent) onEvent(message);
 
             if (message.toolCall) {
-              console.log("🛠️ Gemini Live invocó herramienta:", message.toolCall.functionCalls?.[0]?.name);
-              const functionResponses = message.toolCall.functionCalls.map(fc => ({
-                id: fc.id,
-                name: fc.name,
-                response: { result: "Acción delegada exitosamente. Dile al usuario que ya aparece en su entorno." }
-              }));
-              session.sendToolResponse({ functionResponses });
+              if (onToolCall) {
+                onToolCall(message.toolCall);
+              }
               return;
             }
-            
+
             const serverContent = message.serverContent;
             if (!serverContent) return;
 
             const modelTurn = serverContent.modelTurn;
             if (modelTurn && modelTurn.parts) {
-               for (const part of modelTurn.parts) {
-                 if (part.text) {
-                   onText && onText(part.text);
-                 }
-                 if (part.inlineData) {
-                   // SDK proporciona base64 en data
-                   onAudio && onAudio({
-                     data: part.inlineData.data,
-                     mimeType: part.inlineData.mimeType || 'audio/pcm;rate=24000'
-                   });
-                 }
-               }
+              for (const part of modelTurn.parts) {
+                if (part.text) {
+                  onText && onText(part.text);
+                }
+                if (part.inlineData) {
+                  // SDK proporciona base64 en data
+                  onAudio && onAudio({
+                    data: part.inlineData.data,
+                    mimeType: part.inlineData.mimeType || "audio/pcm;rate=24000",
+                  });
+                }
+              }
             }
           },
           onerror: (err) => {
@@ -118,13 +134,20 @@ export function createGeminiLiveSession({ onText, onAudio, onEvent }) {
     return true;
   };
 
-  const sendRawAudio = (base64Audio) => {
-     if (!base64Audio || !session || !isReady) return false;
-     session.sendRealtimeInput([
-        { mimeType: "audio/pcm;rate=16000", data: base64Audio }
-     ]);
-     return true;
-  }
+  const sendRawAudio = (base64Audio, mimeType = "audio/pcm;rate=16000") => {
+    if (!base64Audio || !session || !isReady) return false;
+    session.sendRealtimeInput([
+      { mimeType, data: base64Audio }
+    ]);
+    return true;
+  };
+
+  const sendToolResponse = (functionResponses) => {
+    if (!session || !isReady) return false;
+    if (!Array.isArray(functionResponses) || functionResponses.length === 0) return false;
+    session.sendToolResponse({ functionResponses });
+    return true;
+  };
 
   const close = () => {
     if (session) {
@@ -138,6 +161,7 @@ export function createGeminiLiveSession({ onText, onAudio, onEvent }) {
     close,
     sendText,
     sendRawAudio,
+    sendToolResponse,
     isReady: () => isReady,
     isEnabled: () => Boolean(apiKey),
   };

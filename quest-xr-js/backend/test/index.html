@@ -173,6 +173,41 @@
       pointer-events: none;
     }
 
+    /* Microphone */
+    .mic-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .mic-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-mic {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-mic.active {
+      background: var(--green);
+      color: #000;
+      box-shadow: 0 0 12px var(--green-glow);
+    }
+    .btn-mic-stop {
+      background: var(--red);
+      color: #fff;
+      box-shadow: 0 0 12px var(--red-glow);
+    }
+    .btn-mic-stop:disabled {
+      opacity: .4;
+      pointer-events: none;
+    }
+    .mic-status {
+      font-size: 12px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+    }
+
     /* Image upload */
     .image-group {
       display: flex;
@@ -378,6 +413,15 @@
         <button class="btn-send" id="btnSend" disabled onclick="sendMessage()">Enviar al Backend ⚡</button>
       </div>
 
+      <h2>Microphone (Live Audio)</h2>
+      <div class="mic-group">
+        <div class="mic-actions">
+          <button class="btn-mic" id="btnMicStart" onclick="startMic()">Start Mic</button>
+          <button class="btn-mic-stop" id="btnMicStop" onclick="stopMic()" disabled>Stop Mic</button>
+        </div>
+        <div class="mic-status" id="micStatus">Mic idle</div>
+      </div>
+
       <h2>Image Payload (VISION)</h2>
       <div class="image-group">
         <div class="drop-zone" id="dropZone">
@@ -462,6 +506,12 @@
     let nextAudioTime = 0;
     let imageBase64 = null;
     let imageMimeType = null;
+    let micContext = null;
+    let micStream = null;
+    let micProcessor = null;
+    let micGain = null;
+    let micActive = false;
+    const micTargetRate = 16000;
     const paneCounts = { system: 0, voice: 0, vision: 0, data: 0 };
 
     function initAudio() {
@@ -478,6 +528,9 @@
     const btnConnect   = $('btnConnect');
     const btnSend      = $('btnSend');
     const txtMessage   = $('txtMessage');
+    const btnMicStart  = $('btnMicStart');
+    const btnMicStop   = $('btnMicStop');
+    const micStatus    = $('micStatus');
     const fileInput    = $('fileInput');
     const dropZone     = $('dropZone');
     const imgPreview   = $('imgPreview');
@@ -511,6 +564,7 @@
         btnConnect.textContent = 'Connect';
         btnConnect.classList.remove('active');
         btnSend.disabled = true;
+        stopMic();
         appendLog('system', 'action-ui_log', '🔌 WebSocket disconnected');
       };
 
@@ -539,6 +593,135 @@
       ws.send(jsonStr);
       appendLog('system', 'action-sent', `📤 Sent: "${text}"${imageBase64 ? ' [+image]' : ''}`);
       txtMessage.value = '';
+    }
+
+    // ── Microphone ──
+    async function startMic() {
+      if (micActive) return;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        appendLog('system', 'action-error', '🎙️ getUserMedia not supported in this browser.');
+        return;
+      }
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        appendLog('system', 'action-error', '🎙️ Connect WebSocket before starting the mic.');
+        return;
+      }
+
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        micContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = micContext.createMediaStreamSource(micStream);
+        micProcessor = micContext.createScriptProcessor(4096, 1, 1);
+        micGain = micContext.createGain();
+        micGain.gain.value = 0;
+
+        source.connect(micProcessor);
+        micProcessor.connect(micGain);
+        micGain.connect(micContext.destination);
+
+        micProcessor.onaudioprocess = (event) => {
+          if (!ws || ws.readyState !== WebSocket.OPEN) return;
+          const input = event.inputBuffer.getChannelData(0);
+          const downsampled = downsampleBuffer(
+            input,
+            micContext.sampleRate,
+            micTargetRate
+          );
+          const pcm16 = floatTo16BitPCM(downsampled);
+          const base64 = arrayBufferToBase64(pcm16.buffer);
+
+          ws.send(
+            JSON.stringify({
+              audio: base64,
+              audioMimeType: `audio/pcm;rate=${micTargetRate}`,
+              audioSampleRate: micTargetRate,
+            })
+          );
+        };
+
+        micActive = true;
+        btnMicStart.classList.add('active');
+        btnMicStop.disabled = false;
+        micStatus.textContent = 'Mic live';
+        appendLog('system', 'action-ui_log', '🎙️ Mic started (16 kHz PCM)');
+      } catch (err) {
+        appendLog('system', 'action-error', `🎙️ Mic error: ${err?.message || err}`);
+      }
+    }
+
+    function stopMic() {
+      if (!micActive) return;
+      micActive = false;
+
+      if (micProcessor) {
+        micProcessor.disconnect();
+        micProcessor.onaudioprocess = null;
+        micProcessor = null;
+      }
+
+      if (micGain) {
+        micGain.disconnect();
+        micGain = null;
+      }
+
+      if (micStream) {
+        micStream.getTracks().forEach((track) => track.stop());
+        micStream = null;
+      }
+
+      if (micContext) {
+        micContext.close();
+        micContext = null;
+      }
+
+      btnMicStart.classList.remove('active');
+      btnMicStop.disabled = true;
+      micStatus.textContent = 'Mic idle';
+      appendLog('system', 'action-ui_log', '🛑 Mic stopped');
+    }
+
+    function downsampleBuffer(buffer, inputRate, outputRate) {
+      if (outputRate >= inputRate) return buffer;
+      const rate = inputRate / outputRate;
+      const newLength = Math.round(buffer.length / rate);
+      const result = new Float32Array(newLength);
+      let offsetResult = 0;
+      let offsetBuffer = 0;
+      while (offsetResult < result.length) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * rate);
+        let acc = 0;
+        let count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+          acc += buffer[i];
+          count++;
+        }
+        result[offsetResult] = count ? acc / count : 0;
+        offsetResult++;
+        offsetBuffer = nextOffsetBuffer;
+      }
+      return result;
+    }
+
+    function floatTo16BitPCM(buffer) {
+      const output = new Int16Array(buffer.length);
+      for (let i = 0; i < buffer.length; i++) {
+        const sample = Math.max(-1, Math.min(1, buffer[i]));
+        output[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+      }
+      return output;
+    }
+
+    function arrayBufferToBase64(buffer) {
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(
+          null,
+          bytes.subarray(i, i + chunkSize)
+        );
+      }
+      return btoa(binary);
     }
 
     // ── Handle Server Messages ──
@@ -587,6 +770,10 @@
 
         case 'OBJECT_REQUEST':
           appendLog('data', 'action-object_request', `🎯 Object request: "${data.query || 'N/A'}"`);
+          break;
+
+        case 'REQUEST_VISION_SNAPSHOT':
+          appendLog('system', 'action-ui_log', `📸 Vision snapshot requested (${data.reason || 'unspecified'})`);
           break;
 
         default:
