@@ -1,6 +1,7 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import {
   DEFAULT_GEMINI_LIVE_MODEL,
+  resolveGeminiClientOptions,
 } from "../configs/gemini.config.js";
 import { logError, logWarn } from "../shared/logger.js";
 
@@ -19,15 +20,22 @@ Habla siempre en español natural (salvo que el usuario pida otro idioma).
 Respuestas humanas, amables y concisas para VR.`;
 
 export function createGeminiLiveSession({ onText, onAudio, onEvent, onToolCall }) {
-  const apiKey = process.env.GEMINI_API_KEY || "";
+  const { mode, options } = resolveGeminiClientOptions();
   const model = process.env.GEMINI_LIVE_MODEL || DEFAULT_GEMINI_LIVE_MODEL;
   const systemPrompt = process.env.GEMINI_LIVE_SYSTEM_PROMPT || DEFAULT_SYSTEM_PROMPT;
-  
-  if (!apiKey) {
-    logWarn("GEMINI_API_KEY is not set. Gemini Live will not connect.");
+
+  const isConfigured =
+    mode === "vertex" ? Boolean(options.project) : Boolean(options.apiKey);
+
+  if (!isConfigured) {
+    const message =
+      mode === "vertex"
+        ? "GOOGLE_CLOUD_PROJECT is not set. Gemini Live will not connect."
+        : "GEMINI_API_KEY or GOOGLE_API_KEY is not set. Gemini Live will not connect.";
+    logWarn(message);
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = isConfigured ? new GoogleGenAI(options) : null;
   let session = null;
   let isReady = false;
 
@@ -74,7 +82,7 @@ export function createGeminiLiveSession({ onText, onAudio, onEvent, onToolCall }
   };
 
   const connect = async () => {
-    if (!apiKey) return;
+    if (!isConfigured || !ai) return;
     try {
       console.log(`🔌 Conectando a Gemini Live usando SDK: ${model}`);
       session = await ai.live.connect({
@@ -163,6 +171,6 @@ export function createGeminiLiveSession({ onText, onAudio, onEvent, onToolCall }
     sendRawAudio,
     sendToolResponse,
     isReady: () => isReady,
-    isEnabled: () => Boolean(apiKey),
+    isEnabled: () => isConfigured,
   };
 }

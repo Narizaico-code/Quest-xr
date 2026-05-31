@@ -30,7 +30,7 @@ export async function runResearchQuery(query) {
       },
     ],
     systemInstruction: { parts: [{ text: RESEARCH_SYSTEM_PROMPT }] },
-    generationConfig: { temperature: 0.2, maxOutputTokens: 1200 },
+    generationConfig: { temperature: 0.2, maxOutputTokens: 5000 },
   });
 
   const rawText = extractTextFromGeminiResponse(response);
