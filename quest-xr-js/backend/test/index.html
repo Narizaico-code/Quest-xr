@@ -772,6 +772,11 @@
           appendLog('data', 'action-object_request', `🎯 Object request: "${data.query || 'N/A'}"`);
           break;
 
+        case 'OBJECT_SPAWN':
+          appendLog('data', 'action-object_request', `🧩 Object spawn (${data.source || '?'}): ${data.url || data.modelUrl || 'N/A'}`);
+          appendJsonBlock('data', 'OBJECT_SPAWN', JSON.stringify(data, null, 2));
+          break;
+
         case 'REQUEST_VISION_SNAPSHOT':
           appendLog('system', 'action-ui_log', `📸 Vision snapshot requested (${data.reason || 'unspecified'})`);
           break;

@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import { analyzeVision } from "../../services/geminiVisionService.js";
 import { runResearchQuery } from "../../services/geminiProService.js";
 import { createGeminiLiveSession } from "../../services/geminiLiveService.js";
+import { resolveObject } from "../../services/objectPipelineService.js";
 import {
   normalizeAudioPayload,
   normalizeImagePayload,
@@ -22,6 +23,8 @@ const CATEGORY_ALIASES = {
   GENERAL: "CONVERSACION_GENERAL",
 };
 
+const OBJECT_PROGRESS_THROTTLE_MS = 30000;
+
 export function createGatewaySession(questSocket) {
   let liveSession = null;
   let lastImagePayload = null;
@@ -30,6 +33,55 @@ export function createGatewaySession(questSocket) {
   const sendQuestAction = (action, payload = {}) => {
     if (questSocket.readyState !== WebSocket.OPEN) return;
     questSocket.send(JSON.stringify({ action, ...payload }));
+  };
+
+  // Resuelve object_name -> URL (Sketchfab/Meshy) de forma async y emite
+  // OBJECT_SPAWN. Las frases de espera/cierre salen SOLO como contexto para Live
+  // (liveSession.sendText), nunca como texto fijo hablado al usuario.
+  const resolveAndSpawnObject = (objectName) => {
+    const name = String(objectName || "").trim();
+    if (!name) return;
+
+    sendQuestAction("UI_LOG", { message: `📦 Resolviendo objeto: ${name}` });
+
+    let lastProgressAt = 0;
+    const onWaitContext = (ctx) => {
+      liveSession.sendText(ctx);
+    };
+    const onProgress = ({ stage, progress, elapsedMs }) => {
+      const now = Date.now();
+      if (now - lastProgressAt < OBJECT_PROGRESS_THROTTLE_MS) return;
+      lastProgressAt = now;
+      const secs = Math.round(elapsedMs / 1000);
+      liveSession.sendText(
+        `[CONTEXTO: sigues generando '${name}', etapa ${stage}, ~${progress}%, ya van ~${secs}s. Si el usuario pregunta, dile con tus palabras que aún está en proceso.]`
+      );
+    };
+
+    resolveObject(name, { onWaitContext, onProgress })
+      .then((result) => {
+        if (result.ok) {
+          sendQuestAction("OBJECT_SPAWN", {
+            url: result.url,
+            modelUrl: result.url,
+            source: result.source,
+            query: name,
+          });
+          liveSession.sendText(
+            `[CONTEXTO: el objeto '${name}' ya apareció en la escena del usuario. Confírmaselo de forma natural y breve.]`
+          );
+        } else {
+          liveSession.sendText(
+            `[CONTEXTO: no se pudo crear el objeto '${name}' (motivo: ${result.reason}). Explícaselo al usuario con tus palabras y ofrece intentar con otro objeto.]`
+          );
+        }
+      })
+      .catch((err) => {
+        logError("Object pipeline error:", err?.message || err);
+        liveSession.sendText(
+          `[CONTEXTO: hubo un error técnico creando el objeto '${name}'. Discúlpate brevemente con el usuario.]`
+        );
+      });
   };
 
   const handleToolCall = async (toolCall) => {
@@ -58,17 +110,17 @@ export function createGatewaySession(questSocket) {
         sendQuestAction("UI_LOG", {
           message: `🛠️ Tool spawn_3d_object -> ${objectName}`,
         });
-        sendQuestAction("OBJECT_REQUEST", {
-          query: objectName,
-          target: objectName,
-          category: "OBJETO",
-        });
+
+        // Resolución async (Sketchfab/Meshy). Respondemos la tool call de
+        // inmediato para no exceder el timeout de Live; OBJECT_SPAWN y el
+        // contexto de cierre salen cuando termine el pipeline.
+        resolveAndSpawnObject(objectName);
 
         functionResponses.push({
           id: call.id,
           name: call.name,
           response: {
-            result: "object_request_sent",
+            result: "object_generation_started",
             object_name: objectName,
           },
         });
@@ -293,14 +345,7 @@ export function createGatewaySession(questSocket) {
 
     switch (explicitCategory) {
       case "OBJETO": {
-        sendQuestAction("UI_LOG", {
-          message: `📦 Object request: ${targetText}`,
-        });
-        sendQuestAction("OBJECT_REQUEST", {
-          query: targetText,
-          target: targetText,
-          category: "OBJETO",
-        });
+        resolveAndSpawnObject(targetText);
         break;
       }
       case "INVESTIGAR": {
